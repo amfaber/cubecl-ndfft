@@ -3,7 +3,7 @@ use bytemuck::Zeroable;
 use cubecl::benchmark::Benchmark;
 use cubecl::future::{self, block_on};
 use cubecl::server::Handle;
-use cubecl_ndfft::plan::{FftParams, execute_ops, plan_fft};
+use cubecl_ndfft::plan::{Direction, FftParams, FftPlan, execute_ops, plan_fft};
 use ndarray::{Array2, ArrayViewMut2};
 use ndrustfft::FftHandler;
 use num_complex::{Complex, Complex32};
@@ -42,23 +42,28 @@ fn rmse(a: &[f32], b: &[f32]) -> f32 {
     (acc / (a.len() as f32)).sqrt()
 }
 
-fn fft_2d_cpu(array: &mut Array2<Complex32>) {
+fn fft_2d_cpu(array: &mut Array2<Complex32>, tmp: &mut Array2<Complex32>) {
     let (rows, cols) = array.dim();
+    let now = std::time::Instant::now();
     let row_handler = FftHandler::new(rows);
     let col_handler = FftHandler::new(cols);
-    let mut tmp = Array2::zeros(array.dim());
-    ndrustfft::ndfft(&array, &mut tmp, &col_handler, 1);
+    dbg!(now.elapsed());
+    // let mut tmp = Array2::zeros(array.dim());
+    
+    let now = std::time::Instant::now();
+    ndrustfft::ndfft(&array, tmp, &col_handler, 1);
     ndrustfft::ndfft(&tmp, array, &row_handler, 0);
+    dbg!(now.elapsed());
     // ndrustfft::ndfft(&array, &mut tmp, &row_handler, 0);
     // ndrustfft::ndfft(&tmp, array, &col_handler, 1);
 }
 
 fn main() {
     // Problem
-    let rows = 4;
-    let cols = 2;
+    let rows = 512;
+    let cols = 512;
     let n = rows * cols;
-    let duplicates = 5;
+    let duplicates = 100;
     dbg!(n);
     // let vec_width: u32 = 4;
     // let threads: u32 = 256;
@@ -67,7 +72,7 @@ fn main() {
     // let mut rng = StdRng::seed_from_u64(123);
     // let host_in = (0..(2 * n)).map(|x| (x % 4) as f32).collect::<Vec<_>>();
 
-    let in_array = Array2::from_shape_fn((rows, cols as usize), |(i, j)| {
+    let mut in_array = Array2::from_shape_fn((rows, cols as usize), |(i, j)| {
         Complex32 {
             re: i as f32,
             im: j as f32,
@@ -88,23 +93,34 @@ fn main() {
     //     .collect::<Vec<_>>();
 
     // CPU reference (rustfft)
+    
 
+    let mut tmp = Array2::zeros(in_array.dim());
     // let now = std::time::Instant::now();
-    let cpu_out = host_in
-        .clone()
-        .into_iter()
-        .flat_map(|mut array| {
-            fft_2d_cpu(&mut array);
-            array
-        })
-        .collect::<Vec<_>>();
-    let cpu_out = complex_to_aos(&cpu_out);
-    // dbg!(now.elapsed());
+
+    fft_2d_cpu(&mut in_array, &mut tmp);
+    // let cpu_out = host_in
+    //     .clone()
+    //     .into_iter()
+    //     .flat_map(|mut array| {
+    //         fft_2d_cpu(&mut array);
+    //         array
+    //     })
+    //     .collect::<Vec<_>>();
+    // let cpu_out = host_in
+    //     .clone()
+    //     .into_iter()
+    //     .flat_map(|mut array| {
+    //         fft_2d_cpu(&mut array);
+    //         array
+    //     })
+    //     .collect::<Vec<_>>();
+    // let cpu_out = complex_to_aos(&cpu_out);
     // let mut cpu = aos_to_complex(&host_in);
     // fft.process(&mut cpu);
     // let cpu_out = complex_to_aos(&cpu);
 
-    dbg!(&cpu_out);
+    // dbg!(&cpu_out);
 
     let host_in = host_in
         .into_iter()
@@ -120,35 +136,37 @@ fn main() {
 
     // --- GPU run (fully fused) ---
     //
-    type RT = cubecl::cuda::CudaRuntime; // adjust runtime if needed
-    // type RT = cubecl::wgpu::WgpuRuntime; // adjust runtime if needed
+    // type RT = cubecl::cuda::CudaRuntime; // adjust runtime if needed
+    type RT = cubecl::wgpu::WgpuRuntime; // adjust runtime if needed
     let device = <RT as Runtime>::Device::default();
     let client = RT::client(&device);
 
-    let plan = plan_fft(vec![duplicates, rows, cols], true, 1024);
+    let plan = plan_fft(vec![duplicates, rows, cols], true, dbg!(1 << 12));
 
-    let n_elem = n;
-    let mut input = client.create(f32::as_bytes(&host_in));
-    let mut tmp = client.empty(host_in.len() * std::mem::size_of::<f32>());
-    let parameters = FftParams {
-        vec_width: 4,
-        local_side_len: 64,
-        threads_per_cube: 256,
-    };
+    dbg!(&plan);
 
-    execute_ops::<RT>(
-        &mut input,
-        &mut tmp,
-        &plan,
-        cubecl_ndfft::plan::Direction::Forward,
-        &client,
-        &parameters,
-    );
+    // let n_elem = n;
+    // let mut input = client.create(f32::as_bytes(&host_in));
+    // let mut tmp = client.empty(host_in.len() * std::mem::size_of::<f32>());
+    // let parameters = FftParams {
+    //     vec_width: 4,
+    //     local_side_len: 64,
+    //     threads_per_cube: 256,
+    // };
 
-    let gpu_out = bytemuck::cast_slice::<u8, f32>(&client.read_one(input)).to_vec();
+    // execute_ops::<RT>(
+    //     &mut input,
+    //     &mut tmp,
+    //     &plan,
+    //     cubecl_ndfft::plan::Direction::Forward,
+    //     &client,
+    //     &parameters,
+    // );
 
-    dbg!(&gpu_out);
-    dbg!(rmse(&cpu_out, &gpu_out));
+    // let gpu_out = bytemuck::cast_slice::<u8, f32>(&client.read_one(input)).to_vec();
+
+    // dbg!(&gpu_out);
+    // dbg!(rmse(&cpu_out, &gpu_out));
     // let out = bytemuck::cast_slice::<u8, PrettierIndex>(&client.read_one(input)).to_vec();
 
     // let mut out = Array2::from_shape_vec((2, 4), out)
@@ -171,19 +189,16 @@ fn main() {
 
     // dbg!(gpu_out);
 
-    // let mut bench = FftBenchmark::<RT> {
-    //     client: client.clone(),
-    //     full_len: full_data.len(),
-    //     full_data,
-    //     n,
-    //     vec_width: 1,
-    //     duplicates,
-    // };
+    let mut bench = FftBenchmark::<RT> {
+        client: client.clone(),
+        full_data: host_in,
+        plan,
+    };
 
     // bench.vec_width = 4;
-    // let timing_method = cubecl::benchmark::TimingMethod::Device;
-    // let durations = bench.run(timing_method).unwrap();
-    // dbg!(durations);
+    let timing_method = cubecl::benchmark::TimingMethod::Device;
+    let durations = bench.run(timing_method).unwrap();
+    dbg!(durations);
     // bench.vec_width = 1;
     // let durations = bench.run(timing_method).unwrap();
     // dbg!(durations);
@@ -406,35 +421,36 @@ fn correctness_tests<RT: Runtime>(
 
 struct FftBenchmark<R: Runtime> {
     client: ComputeClient<R::Server, R::Channel>,
+    plan: FftPlan,
     full_data: Vec<f32>,
-    n: u32,
-    full_len: usize,
-    duplicates: u32,
-    vec_width: u8,
 }
 
 impl<R: Runtime> Benchmark for FftBenchmark<R> {
-    type Input = Handle;
+    type Input = (Handle, Handle);
 
     type Output = Handle;
 
     fn prepare(&self) -> Self::Input {
-        self.client.create(f32::as_bytes(&self.full_data))
+        let input = self.client.create(f32::as_bytes(&self.full_data));
+        let tmp = self.client.create(f32::as_bytes(&self.full_data));
+        (input, tmp)
     }
 
     fn execute(&self, input: Self::Input) -> Result<Self::Output, String> {
-        let d_input =
-            unsafe { ArrayArg::<R>::from_raw_parts::<f32>(&input, self.full_len, self.vec_width) };
-        unsafe {
-            fft1d_r2_fused::launch_unchecked::<R>(
-                &self.client,
-                CubeCount::Static(self.duplicates, 1, 1),
-                CubeDim::new(256, 1, 1),
-                d_input,
-                ScalarArg::new(-1.),
-                self.n,
-            );
-        }
+        let (mut input, mut tmp) = input;
+        execute_ops::<R>(
+            &mut input,
+            &mut tmp,
+            &self.plan,
+            Direction::Forward,
+            &self.client,
+            &FftParams {
+                vec_width: 4,
+                local_side_len: 64,
+                threads_per_cube: 256,
+            },
+        );
+
         Ok(input)
     }
 

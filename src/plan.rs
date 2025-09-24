@@ -38,7 +38,7 @@ pub fn plan_fft(dimensions: Vec<usize>, has_batch: bool, fuse_size: u32) -> FftP
             plan1d(dimension as u32, fuse_size, &mut ops);
         }
         let rows = (buffer_len / dimension) as u32;
-        if rows != 1 {
+        if rows != 1 && dimension != 1 {
             ops.push(Op::Transpose(TransposeOp {
                 rows,
                 cols: dimension as u32,

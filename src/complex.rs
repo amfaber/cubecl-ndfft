@@ -1,6 +1,6 @@
-use cubecl::{cube, prelude::*, CubeLaunch, CubeType};
+use cubecl::{CubeType, cube};
 
-#[derive(CubeType, CubeLaunch, Clone, Copy)]
+#[derive(CubeType, Clone, Copy)]
 pub struct C32 {
     pub re: f32,
     pub im: f32,
@@ -15,6 +15,7 @@ impl C32 {
             im: self.im + b.im,
         }
     }
+    
     #[inline]
     pub fn sub(self, b: Self) -> Self {
         C32 {

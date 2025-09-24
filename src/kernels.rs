@@ -25,7 +25,6 @@ fn write_complex_to_shared(shared: &mut SharedMemory<f32>, idx_c: u32, v: C32) {
     shared[f + 1] = v.im;
 }
 
-
 #[derive(CubeType, CubeLaunch, Debug)]
 pub struct TwiddleTransposeUniform {
     pub rows: u32, // in complex units
@@ -45,11 +44,11 @@ pub fn twiddle_transpose2d_tiled(
     uniform: TwiddleTransposeUniform,
 ) {
     // ---- thread/block ids ----
-    let tid: u32 = UNIT_POS_X;
-    let threads: u32 = CUBE_DIM_X;
-    let batch: u32 = CUBE_POS_X;
-    let tile_row: u32 = CUBE_POS_Y;
-    let tile_col: u32 = CUBE_POS_Z;
+    let tid = UNIT_POS_X;
+    let threads = CUBE_DIM_X;
+    let batch = CUBE_POS_X;
+    let tile_row = CUBE_POS_Y;
+    let tile_col = CUBE_POS_Z;
 
     // ---- unpack uniforms ----
     let TwiddleTransposeUniform {
@@ -136,7 +135,7 @@ fn downgrade_const(x: u32) -> u32 {
 
 #[cube(launch_unchecked)]
 pub fn fft1d_r2_fused(
-    input: &mut Array<Line<f32>>, // AoS: [re, im, re, im, ...] (floats)
+    input: &mut Array<Line<f32>>,
     sign: f32,
     #[comptime] fft_len: u32,
 ) {
