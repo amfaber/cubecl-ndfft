@@ -4,12 +4,12 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-# cubecl = { path = "../cubecl_upstream/crates/cubecl" }
-# cubecl-runtime = { path = "../cubecl_upstream/crates/cubecl-runtime" }
+cubecl = { path = "../cubecl_upstream/crates/cubecl" }
+cubecl-runtime = { path = "../cubecl_upstream/crates/cubecl-runtime" }
 # cubecl = { git = "https://github.com/tracel-ai/cubecl", rev = "7e3d7cb84b2c764d43477f7f890e4b9afe1102fe" }
 # cubecl-runtime = { git = "https://github.com/tracel-ai/cubecl", rev = "7e3d7cb84b2c764d43477f7f890e4b9afe1102fe" }
-cubecl = { git = "https://github.com/tracel-ai/cubecl", rev = "3770b479" }
-cubecl-runtime = { git = "https://github.com/tracel-ai/cubecl", rev = "3770b479" }
+# cubecl = { git = "https://github.com/tracel-ai/cubecl", rev = "3770b479" }
+# cubecl-runtime = { git = "https://github.com/tracel-ai/cubecl", rev = "3770b479" }
 bytemuck = { version = "1", features = ["derive"] }
 num-complex = "0.4" # optional, for host-side interop
 serde = { version = "1.0.221", features = ["derive"] }

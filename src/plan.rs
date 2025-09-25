@@ -32,16 +32,29 @@ pub struct FftParams {
     pub threads_per_cube: u32,
 }
 
-pub fn plan_fft(dimensions: Vec<usize>, has_batch: bool, fuse_size: u32, naive: bool) -> FftPlan {
+pub enum KernelKind {
+    Local,
+    Global,
+}
+
+pub fn plan_fft(
+    dimensions: Vec<usize>,
+    has_batch: bool,
+    fuse_size: u32,
+    kernel_kind: KernelKind,
+) -> FftPlan {
     let mut ops = vec![];
     let buffer_len = dimensions.iter().product::<usize>();
 
     for (index, &dimension) in dimensions.iter().enumerate().rev() {
         if !(index == 0 && has_batch) {
-            if naive {
-                plan1d_naive(dimension as u32, &mut ops);
-            } else {
-                plan1d(dimension as u32, fuse_size, &mut ops);
+            match kernel_kind {
+                KernelKind::Local => {
+                    plan1d(dimension as u32, fuse_size, &mut ops);
+                }
+                KernelKind::Global => {
+                    plan1d_naive(dimension as u32, &mut ops);
+                }
             }
         }
         let rows = (buffer_len / dimension) as u32;
@@ -54,6 +67,17 @@ pub fn plan_fft(dimensions: Vec<usize>, has_batch: bool, fuse_size: u32, naive: 
         }
     }
     FftPlan { ops, buffer_len }
+}
+
+fn plan1d_naive(fft_len: u32, ops: &mut Vec<Op>) {
+    let mut ns = 1;
+    while ns < fft_len {
+        ops.push(Op::FftNaive {
+            len: fft_len,
+            ns: ns,
+        });
+        ns *= 2;
+    }
 }
 
 fn plan1d(fft_len: u32, fuse_size: u32, ops: &mut Vec<Op>) {
@@ -84,17 +108,6 @@ fn plan1d(fft_len: u32, fuse_size: u32, ops: &mut Vec<Op>) {
         cols: rest,
         twiddles: false,
     }));
-}
-
-fn plan1d_naive(fft_len: u32, ops: &mut Vec<Op>) {
-    let mut ns = 1;
-    while ns < fft_len {
-        ops.push(Op::FftNaive {
-            len: fft_len,
-            ns: ns,
-        });
-        ns *= 2;
-    }
 }
 
 pub enum Direction {
@@ -150,10 +163,8 @@ pub fn execute_ops<RT: Runtime>(
                     cubecl::prelude::ArrayArg::<RT>::from_raw_parts::<f32>(dst, *buffer_len * 2, 2);
 
                 let butterflies = (buffer_len / 2) as u32;
-                // let now = std::time::Instant::now();
                 let naive_dispatcher =
                     dispatcher_flat(butterflies as u64, *threads_per_cube as u64);
-                // dbg!(now.elapsed());
 
                 fft1d_r2_naive::launch_unchecked::<RT>(
                     client,

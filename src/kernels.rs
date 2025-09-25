@@ -126,8 +126,6 @@ fn twiddle(sign: f32, k: u32, n: u32) -> C32 {
     }
 }
 
-pub const R2: u32 = 2;
-
 #[cube]
 fn downgrade_const(x: u32) -> u32 {
     x
@@ -145,11 +143,9 @@ pub fn fft1d_r2_fused(input: &mut Array<Line<f32>>, sign: f32, #[comptime] fft_l
     let base_scalar_c = fft_idx * fft_len;
     let base_f32 = base_scalar_c * 2;
 
-    // Shared AoS ping-pong: two halves (each 2*T floats) → 4*T floats total
     let mut shared = SharedMemory::<f32>::new(fft_len * 4);
 
     // ---- Load: GLOBAL → SHARED[A] ----
-
     let fft_len_lines = ceil_div(fft_len * 2, vec_width);
     let lines_per_thread = ceil_div(fft_len_lines, num_threads);
 
@@ -200,7 +196,7 @@ pub fn fft1d_r2_fused(input: &mut Array<Line<f32>>, sign: f32, #[comptime] fft_l
         }
         sync_cube();
 
-        ns *= R2;
+        ns *= 2;
 
         let tmp = src_base_c;
         src_base_c = dst_base_c;
@@ -255,9 +251,8 @@ pub fn fft1d_r2_naive(
     let butterfly_idx = global_butterfly_idx % butterflies_per_fft;
     let base_c = fft_len * batch;
 
-    let n = fft_len;
     let r = 2u32;
-    let n2 = n / r;
+    let n2 = fft_len / r;
 
     let k = butterfly_idx % ns;
 
