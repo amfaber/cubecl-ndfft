@@ -44,12 +44,12 @@ fn rmse(a: &[f32], b: &[f32]) -> f32 {
 
 fn fft_2d_cpu(array: &mut Array2<Complex32>, tmp: &mut Array2<Complex32>) {
     let (rows, cols) = array.dim();
-    let now = std::time::Instant::now();
+    // let now = std::time::Instant::now();
     let row_handler = FftHandler::new(rows);
     let col_handler = FftHandler::new(cols);
-    dbg!(now.elapsed());
+    // dbg!(now.elapsed());
     // let mut tmp = Array2::zeros(array.dim());
-    
+
     let now = std::time::Instant::now();
     ndrustfft::ndfft(&array, tmp, &col_handler, 1);
     ndrustfft::ndfft(&tmp, array, &row_handler, 0);
@@ -60,10 +60,10 @@ fn fft_2d_cpu(array: &mut Array2<Complex32>, tmp: &mut Array2<Complex32>) {
 
 fn main() {
     // Problem
-    let rows = 512;
-    let cols = 512;
+    let rows = 2048;
+    let cols = 2048;
     let n = rows * cols;
-    let duplicates = 100;
+    let duplicates = 1;
     dbg!(n);
     // let vec_width: u32 = 4;
     // let threads: u32 = 256;
@@ -93,7 +93,6 @@ fn main() {
     //     .collect::<Vec<_>>();
 
     // CPU reference (rustfft)
-    
 
     let mut tmp = Array2::zeros(in_array.dim());
     // let now = std::time::Instant::now();
@@ -141,53 +140,10 @@ fn main() {
     let device = <RT as Runtime>::Device::default();
     let client = RT::client(&device);
 
-    let plan = plan_fft(vec![duplicates, rows, cols], true, dbg!(1 << 12));
+    // let plan = plan_fft(vec![duplicates, cols], true, 1 << 12, true);
+    let plan = plan_fft(vec![duplicates, rows, cols], true, 1 << 12, false);
 
-    dbg!(&plan);
-
-    // let n_elem = n;
-    // let mut input = client.create(f32::as_bytes(&host_in));
-    // let mut tmp = client.empty(host_in.len() * std::mem::size_of::<f32>());
-    // let parameters = FftParams {
-    //     vec_width: 4,
-    //     local_side_len: 64,
-    //     threads_per_cube: 256,
-    // };
-
-    // execute_ops::<RT>(
-    //     &mut input,
-    //     &mut tmp,
-    //     &plan,
-    //     cubecl_ndfft::plan::Direction::Forward,
-    //     &client,
-    //     &parameters,
-    // );
-
-    // let gpu_out = bytemuck::cast_slice::<u8, f32>(&client.read_one(input)).to_vec();
-
-    // dbg!(&gpu_out);
-    // dbg!(rmse(&cpu_out, &gpu_out));
-    // let out = bytemuck::cast_slice::<u8, PrettierIndex>(&client.read_one(input)).to_vec();
-
-    // let mut out = Array2::from_shape_vec((2, 4), out)
-    //     .unwrap()
-    //     .mapv(|x| Complex32 {
-    //         re: x.0[0],
-    //         im: x.0[1],
-    //     });
-    // print_src("gpu_out", &out.view_mut());
-
-    // pure_transpose_test::<RT>(&client);
-
-    // cpu_four_step(&host_in);
-
-    // let full_data = (0..duplicates)
-    //     .flat_map(|_| host_in.clone())
-    //     .collect::<Vec<_>>();
-
-    // let gpu_out = correctness_tests::<RT>(&client, full_data, n, 4);
-
-    // dbg!(gpu_out);
+    // dbg!(&plan);
 
     let mut bench = FftBenchmark::<RT> {
         client: client.clone(),
@@ -195,10 +151,24 @@ fn main() {
         plan,
     };
 
-    // bench.vec_width = 4;
+    let input = bench.prepare();
+    let out = bench.execute(input).unwrap();
+
+    let gpu_out = bytemuck::cast_slice::<u8, f32>(&client.read_one(out)).to_vec();
+
+    // dbg!(&gpu_out);
+    // let cpu_out = in_array
+    //     .into_iter()
+    //     .flat_map(|complex| [complex.re, complex.im])
+    //     .collect::<Vec<_>>();
+    // dbg!(&cpu_out);
+    // dbg!(&gpu_out);
+    // dbg!(rmse(&cpu_out, &gpu_out));
+
     let timing_method = cubecl::benchmark::TimingMethod::Device;
     let durations = bench.run(timing_method).unwrap();
     dbg!(durations);
+
     // bench.vec_width = 1;
     // let durations = bench.run(timing_method).unwrap();
     // dbg!(durations);
@@ -438,8 +408,8 @@ impl<R: Runtime> Benchmark for FftBenchmark<R> {
 
     fn execute(&self, input: Self::Input) -> Result<Self::Output, String> {
         let (mut input, mut tmp) = input;
-        execute_ops::<R>(
-            &mut input,
+        let output = execute_ops::<R>(
+            input,
             &mut tmp,
             &self.plan,
             Direction::Forward,
@@ -451,7 +421,7 @@ impl<R: Runtime> Benchmark for FftBenchmark<R> {
             },
         );
 
-        Ok(input)
+        Ok(output)
     }
 
     fn name(&self) -> String {

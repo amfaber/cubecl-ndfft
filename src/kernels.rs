@@ -134,11 +134,7 @@ fn downgrade_const(x: u32) -> u32 {
 }
 
 #[cube(launch_unchecked)]
-pub fn fft1d_r2_fused(
-    input: &mut Array<Line<f32>>,
-    sign: f32,
-    #[comptime] fft_len: u32,
-) {
+pub fn fft1d_r2_fused(input: &mut Array<Line<f32>>, sign: f32, #[comptime] fft_len: u32) {
     let r = 2;
     let thread_id: u32 = UNIT_POS_X;
     let num_threads: u32 = CUBE_DIM_X;
@@ -225,4 +221,61 @@ pub fn fft1d_r2_fused(
             input[global_line_idx] = out_line;
         }
     }
+}
+#[cube]
+fn read_complex_line(a: &Array<Line<f32>>, idx_c: u32) -> C32 {
+    let l = a[idx_c];
+    C32 { re: l[0], im: l[1] }
+}
+
+#[cube]
+fn write_complex_line(a: &mut Array<Line<f32>>, idx_c: u32, v: C32) {
+    let mut l = Line::<f32>::empty(2u32); // requires line_size == 2
+    l[0] = v.re;
+    l[1] = v.im;
+    a[idx_c] = l;
+}
+
+#[cube(launch_unchecked)]
+pub fn fft1d_r2_naive(
+    src: &Array<Line<f32>>,
+    dst: &mut Array<Line<f32>>,
+    sign: f32,
+    fft_len: u32,
+    ns: u32,
+) {
+    let global_butterfly_idx = ABSOLUTE_POS;
+    let butterflies_per_fft = fft_len / 2;
+    let total_butterflies = src.len() / 2;
+
+    let batch = global_butterfly_idx / butterflies_per_fft;
+    if global_butterfly_idx >= total_butterflies {
+        terminate!()
+    }
+    let butterfly_idx = global_butterfly_idx % butterflies_per_fft;
+    let base_c = fft_len * batch;
+
+    let n = fft_len;
+    let r = 2u32;
+    let n2 = n / r;
+
+    let k = butterfly_idx % ns;
+
+    let in_index0 = base_c + butterfly_idx;
+    let in_index1 = base_c + butterfly_idx + n2;
+
+    let c0 = read_complex_line(src, in_index0);
+    let c1 = read_complex_line(src, in_index1);
+
+    let w = twiddle(sign, k, ns * r);
+    let t1 = c1.mul(w);
+
+    let o0 = c0.add(t1);
+    let o1 = c0.sub(t1);
+    let o_base = (butterfly_idx / ns) * ns * r + k;
+    let out_index0 = base_c + o_base;
+    let out_index1 = out_index0 + ns;
+
+    write_complex_line(dst, out_index0, o0);
+    write_complex_line(dst, out_index1, o1);
 }
